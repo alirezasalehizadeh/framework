@@ -2264,12 +2264,14 @@ class SupportCollectionTest extends TestCase
     {
         $data = new $collection(['first' => 'Taylor', 'last' => 'Otwell', 'email' => 'taylorotwell@gmail.com']);
 
+        $this->assertEquals($data->all(), $data->except(null)->all());
         $this->assertEquals(['first' => 'Taylor'], $data->except(['last', 'email', 'missing'])->all());
         $this->assertEquals(['first' => 'Taylor'], $data->except('last', 'email', 'missing')->all());
-
         $this->assertEquals(['first' => 'Taylor'], $data->except(collect(['last', 'email', 'missing']))->all());
+
         $this->assertEquals(['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'], $data->except(['last'])->all());
         $this->assertEquals(['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'], $data->except('last')->all());
+        $this->assertEquals(['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'], $data->except(collect(['last']))->all());
     }
 
     /**
@@ -3342,6 +3344,20 @@ class SupportCollectionTest extends TestCase
     public function sortByUrl(array $value)
     {
         return $value['url'];
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testGroupByAttributeWithBackedEnumKey($collection)
+    {
+        $data = new $collection([
+            ['rating' => TestBackedEnum::A, 'url' => '1'],
+            ['rating' => TestBackedEnum::B, 'url' => '1'],
+        ]);
+
+        $result = $data->groupBy('rating');
+        $this->assertEquals([TestBackedEnum::A->value => [['rating' => TestBackedEnum::A, 'url' => '1']], TestBackedEnum::B->value => [['rating' => TestBackedEnum::B, 'url' => '1']]], $result->toArray());
     }
 
     /**
@@ -5577,6 +5593,86 @@ class SupportCollectionTest extends TestCase
             'foo.1' => 'baz',
             'foo.baz' => 'boom',
         ], $data->all());
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testEnsureForScalar($collection)
+    {
+        $data = $collection::make([1, 2, 3]);
+        $data->ensure('int');
+
+        $data = $collection::make([1, 2, 3, 'foo']);
+        $this->expectException(UnexpectedValueException::class);
+        $data->ensure('int');
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testEnsureForObjects($collection)
+    {
+        $data = $collection::make([new stdClass, new stdClass, new stdClass]);
+        $data->ensure(stdClass::class);
+
+        $data = $collection::make([new stdClass, new stdClass, new stdClass, $collection]);
+        $this->expectException(UnexpectedValueException::class);
+        $data->ensure(stdClass::class);
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testEnsureForInheritance($collection)
+    {
+        $data = $collection::make([new \Error, new \Error]);
+        $data->ensure(\Throwable::class);
+
+        $data = $collection::make([new \Error, new \Error, new $collection]);
+        $this->expectException(UnexpectedValueException::class);
+        $data->ensure(\Throwable::class);
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testPercentageWithFlatCollection($collection)
+    {
+        $collection = new $collection([1, 1, 2, 2, 2, 3]);
+
+        $this->assertSame(33.33, $collection->percentage(fn ($value) => $value === 1));
+        $this->assertSame(50.00, $collection->percentage(fn ($value) => $value === 2));
+        $this->assertSame(16.67, $collection->percentage(fn ($value) => $value === 3));
+        $this->assertSame(0.0, $collection->percentage(fn ($value) => $value === 5));
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testPercentageWithNestedCollection($collection)
+    {
+        $collection = new $collection([
+            ['name' => 'Taylor', 'foo' => 'foo'],
+            ['name' => 'Nuno', 'foo' => 'bar'],
+            ['name' => 'Dries', 'foo' => 'bar'],
+            ['name' => 'Jess', 'foo' => 'baz'],
+        ]);
+
+        $this->assertSame(25.00, $collection->percentage(fn ($value) => $value['foo'] === 'foo'));
+        $this->assertSame(50.00, $collection->percentage(fn ($value) => $value['foo'] === 'bar'));
+        $this->assertSame(25.00, $collection->percentage(fn ($value) => $value['foo'] === 'baz'));
+        $this->assertSame(0.0, $collection->percentage(fn ($value) => $value['foo'] === 'test'));
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testPercentageReturnsNullForEmptyCollections($collection)
+    {
+        $collection = new $collection([]);
+
+        $this->assertNull($collection->percentage(fn ($value) => $value === 1));
     }
 
     /**
