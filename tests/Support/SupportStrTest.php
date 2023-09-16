@@ -609,6 +609,19 @@ class SupportStrTest extends TestCase
         $this->assertSame('Jönköping Malmö', Str::replaceFirst('', 'yyy', 'Jönköping Malmö'));
     }
 
+    public function testReplaceStart()
+    {
+        $this->assertSame('foobar foobar', Str::replaceStart('bar', 'qux', 'foobar foobar'));
+        $this->assertSame('foo/bar? foo/bar?', Str::replaceStart('bar?', 'qux?', 'foo/bar? foo/bar?'));
+        $this->assertSame('quxbar foobar', Str::replaceStart('foo', 'qux', 'foobar foobar'));
+        $this->assertSame('qux? foo/bar?', Str::replaceStart('foo/bar?', 'qux?', 'foo/bar? foo/bar?'));
+        $this->assertSame('bar foobar', Str::replaceStart('foo', '', 'foobar foobar'));
+        $this->assertSame('1', Str::replaceStart(0, '1', '0'));
+        // Test for multibyte string support
+        $this->assertSame('xxxnköping Malmö', Str::replaceStart('Jö', 'xxx', 'Jönköping Malmö'));
+        $this->assertSame('Jönköping Malmö', Str::replaceStart('', 'yyy', 'Jönköping Malmö'));
+    }
+
     public function testReplaceLast()
     {
         $this->assertSame('foobar fooqux', Str::replaceLast('bar', 'qux', 'foobar foobar'));
@@ -619,6 +632,20 @@ class SupportStrTest extends TestCase
         // Test for multibyte string support
         $this->assertSame('Malmö Jönkxxxping', Str::replaceLast('ö', 'xxx', 'Malmö Jönköping'));
         $this->assertSame('Malmö Jönköping', Str::replaceLast('', 'yyy', 'Malmö Jönköping'));
+    }
+
+    public function testReplaceEnd()
+    {
+        $this->assertSame('foobar fooqux', Str::replaceEnd('bar', 'qux', 'foobar foobar'));
+        $this->assertSame('foo/bar? foo/qux?', Str::replaceEnd('bar?', 'qux?', 'foo/bar? foo/bar?'));
+        $this->assertSame('foobar foo', Str::replaceEnd('bar', '', 'foobar foobar'));
+        $this->assertSame('foobar foobar', Str::replaceEnd('xxx', 'yyy', 'foobar foobar'));
+        $this->assertSame('foobar foobar', Str::replaceEnd('', 'yyy', 'foobar foobar'));
+        $this->assertSame('fooxxx foobar', Str::replaceEnd('xxx', 'yyy', 'fooxxx foobar'));
+
+        // // Test for multibyte string support
+        $this->assertSame('Malmö Jönköping', Str::replaceEnd('ö', 'xxx', 'Malmö Jönköping'));
+        $this->assertSame('Malmö Jönkyyy', Str::replaceEnd('öping', 'yyy', 'Malmö Jönköping'));
     }
 
     public function testRemove()
@@ -1125,6 +1152,111 @@ class SupportStrTest extends TestCase
             $this->fail();
         } finally {
             Str::createUuidsNormally();
+        }
+    }
+
+    public function testItCanFreezeUlids()
+    {
+        $this->assertNotSame((string) Str::ulid(), (string) Str::ulid());
+        $this->assertNotSame(Str::ulid(), Str::ulid());
+
+        $ulid = Str::freezeUlids();
+
+        $this->assertSame($ulid, Str::ulid());
+        $this->assertSame(Str::ulid(), Str::ulid());
+        $this->assertSame((string) $ulid, (string) Str::ulid());
+        $this->assertSame((string) Str::ulid(), (string) Str::ulid());
+
+        Str::createUlidsNormally();
+
+        $this->assertNotSame(Str::ulid(), Str::ulid());
+        $this->assertNotSame((string) Str::ulid(), (string) Str::ulid());
+    }
+
+    public function testItCanFreezeUlidsInAClosure()
+    {
+        $ulids = [];
+
+        $ulid = Str::freezeUlids(function ($ulid) use (&$ulids) {
+            $ulids[] = $ulid;
+            $ulids[] = Str::ulid();
+            $ulids[] = Str::ulid();
+        });
+
+        $this->assertSame($ulid, $ulids[0]);
+        $this->assertSame((string) $ulid, (string) $ulids[0]);
+        $this->assertSame((string) $ulids[0], (string) $ulids[1]);
+        $this->assertSame($ulids[0], $ulids[1]);
+        $this->assertSame((string) $ulids[0], (string) $ulids[1]);
+        $this->assertSame($ulids[1], $ulids[2]);
+        $this->assertSame((string) $ulids[1], (string) $ulids[2]);
+        $this->assertNotSame(Str::ulid(), Str::ulid());
+        $this->assertNotSame((string) Str::ulid(), (string) Str::ulid());
+
+        Str::createUlidsNormally();
+    }
+
+    public function testItCreatesUlidsNormallyAfterFailureWithinFreezeMethod()
+    {
+        try {
+            Str::freezeUlids(function () {
+                Str::createUlidsUsing(fn () => Str::of('1234'));
+                $this->assertSame('1234', (string) Str::ulid());
+                throw new \Exception('Something failed');
+            });
+        } catch (\Exception) {
+            $this->assertNotSame('1234', (string) Str::ulid());
+        }
+    }
+
+    public function testItCanSpecifyASequenceOfUlidsToUtilise()
+    {
+        Str::createUlidsUsingSequence([
+            0 => ($zeroth = Str::ulid()),
+            1 => ($first = Str::ulid()),
+            // just generate a random one here...
+            3 => ($third = Str::ulid()),
+            // continue to generate random ulids...
+        ]);
+
+        $retrieved = Str::ulid();
+        $this->assertSame($zeroth, $retrieved);
+        $this->assertSame((string) $zeroth, (string) $retrieved);
+
+        $retrieved = Str::ulid();
+        $this->assertSame($first, $retrieved);
+        $this->assertSame((string) $first, (string) $retrieved);
+
+        $retrieved = Str::ulid();
+        $this->assertFalse(in_array($retrieved, [$zeroth, $first, $third], true));
+        $this->assertFalse(in_array((string) $retrieved, [(string) $zeroth, (string) $first, (string) $third], true));
+
+        $retrieved = Str::ulid();
+        $this->assertSame($third, $retrieved);
+        $this->assertSame((string) $third, (string) $retrieved);
+
+        $retrieved = Str::ulid();
+        $this->assertFalse(in_array($retrieved, [$zeroth, $first, $third], true));
+        $this->assertFalse(in_array((string) $retrieved, [(string) $zeroth, (string) $first, (string) $third], true));
+
+        Str::createUlidsNormally();
+    }
+
+    public function testItCanSpecifyAFallbackForAUlidSequence()
+    {
+        Str::createUlidsUsingSequence(
+            [Str::ulid(), Str::ulid()],
+            fn () => throw new Exception('Out of Ulids'),
+        );
+        Str::ulid();
+        Str::ulid();
+
+        try {
+            $this->expectExceptionMessage('Out of Ulids');
+            Str::ulid();
+            $this->fail();
+        } finally {
+            Str::createUlidsNormally();
         }
     }
 
