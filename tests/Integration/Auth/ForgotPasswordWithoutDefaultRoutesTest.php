@@ -3,16 +3,21 @@
 namespace Illuminate\Tests\Integration\Auth;
 
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Tests\Integration\Auth\Fixtures\AuthenticationTestUser;
+use Orchestra\Testbench\Attributes\WithMigration;
 use Orchestra\Testbench\Factories\UserFactory;
 use Orchestra\Testbench\TestCase;
 
+#[WithMigration]
 class ForgotPasswordWithoutDefaultRoutesTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function tearDown(): void
     {
         ResetPassword::$createUrlCallback = null;
@@ -27,11 +32,6 @@ class ForgotPasswordWithoutDefaultRoutesTest extends TestCase
         $app['config']->set('auth.providers.users.model', AuthenticationTestUser::class);
     }
 
-    protected function defineDatabaseMigrations()
-    {
-        $this->loadLaravelMigrations();
-    }
-
     protected function defineRoutes($router)
     {
         $router->get('custom/password/reset/{token}', function ($token) {
@@ -39,8 +39,7 @@ class ForgotPasswordWithoutDefaultRoutesTest extends TestCase
         })->name('custom.password.reset');
     }
 
-    /** @test */
-    public function it_cannot_send_forgot_password_email()
+    public function testItCannotSendForgotPasswordEmail()
     {
         $this->expectException('Symfony\Component\Routing\Exception\RouteNotFoundException');
         $this->expectExceptionMessage('Route [password.reset] not defined.');
@@ -66,8 +65,7 @@ class ForgotPasswordWithoutDefaultRoutesTest extends TestCase
         );
     }
 
-    /** @test */
-    public function it_can_send_forgot_password_email_via_create_url_using()
+    public function testItCanSendForgotPasswordEmailViaCreateUrlUsing()
     {
         Notification::fake();
 
@@ -94,8 +92,7 @@ class ForgotPasswordWithoutDefaultRoutesTest extends TestCase
         );
     }
 
-    /** @test */
-    public function it_can_send_forgot_password_email_via_to_mail_using()
+    public function testItCanSendForgotPasswordEmailViaToMailUsing()
     {
         Notification::fake();
 

@@ -8,6 +8,8 @@ use Mockery as m;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
+use function Illuminate\Support\php_binary;
+
 class SupportComposerTest extends TestCase
 {
     protected function tearDown(): void
@@ -24,9 +26,7 @@ class SupportComposerTest extends TestCase
 
     public function testDumpAutoloadRunsTheCorrectCommandWhenCustomComposerPharIsPresent()
     {
-        $escape = '\\' === DIRECTORY_SEPARATOR ? '"' : '\'';
-
-        $expectedProcessArguments = [$escape.PHP_BINARY.$escape,  'composer.phar', 'dump-autoload'];
+        $expectedProcessArguments = [php_binary(),  'composer.phar', 'dump-autoload'];
         $customComposerPhar = true;
 
         $composer = $this->mockComposer($expectedProcessArguments, $customComposerPhar);

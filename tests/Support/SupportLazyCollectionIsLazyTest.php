@@ -7,6 +7,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\ItemNotFoundException;
 use Illuminate\Support\LazyCollection;
 use Illuminate\Support\MultipleItemsFoundException;
+use Illuminate\Support\Sleep;
 use Mockery as m;
 use PHPUnit\Framework\TestCase;
 use stdClass;
@@ -134,6 +135,20 @@ class SupportLazyCollectionIsLazyTest extends TestCase
 
         $this->assertEnumerations(2, $firstEnumerations);
         $this->assertEnumerations(1, $secondEnumerations);
+    }
+
+    public function testMultiplyIsLazy()
+    {
+        $this->assertDoesNotEnumerate(function ($collection) {
+            $collection->multiply(2);
+        });
+
+        $this->assertEnumeratesCollectionOnce(
+            $this->make([1, 2, 3]),
+            function ($collection) {
+                return $collection->multiply(3)->all();
+            }
+        );
     }
 
     public function testContainsIsLazy()
@@ -1370,6 +1385,25 @@ class SupportLazyCollectionIsLazyTest extends TestCase
         });
     }
 
+    public function testThrottleIsLazy()
+    {
+        Sleep::fake();
+
+        $this->assertDoesNotEnumerate(function ($collection) {
+            $collection->throttle(10);
+        });
+
+        $this->assertEnumerates(5, function ($collection) {
+            $collection->throttle(10)->take(5)->all();
+        });
+
+        $this->assertEnumeratesOnce(function ($collection) {
+            $collection->throttle(10)->all();
+        });
+
+        Sleep::fake(false);
+    }
+
     public function testTimesIsLazy()
     {
         $data = LazyCollection::times(INF);
@@ -1549,7 +1583,7 @@ class SupportLazyCollectionIsLazyTest extends TestCase
     {
         $data = $this->make(['a' => 0])->concat(
             $this->make([['a' => 1], ['a' => 2], ['a' => 3], ['a' => 4]])
-                 ->mapInto(stdClass::class)
+                ->mapInto(stdClass::class)
         );
 
         $this->assertDoesNotEnumerateCollection($data, function ($collection) {

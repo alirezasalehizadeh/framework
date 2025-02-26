@@ -59,6 +59,18 @@ class CacheManagerTest extends TestCase
         $this->assertSame('mm(u_u)mm', $driver->flag);
     }
 
+    public function testItCanBuildRepositories()
+    {
+        $app = $this->getApp([]);
+        $cacheManager = new CacheManager($app);
+
+        $arrayCache = $cacheManager->build(['driver' => 'array']);
+        $nullCache = $cacheManager->build(['driver' => 'null']);
+
+        $this->assertInstanceOf(ArrayStore::class, $arrayCache->getStore());
+        $this->assertInstanceOf(NullStore::class, $nullCache->getStore());
+    }
+
     public function testItMakesRepositoryWhenContainerHasNoDispatcher()
     {
         $userConfig = [
@@ -275,6 +287,36 @@ class CacheManagerTest extends TestCase
         $cacheManager = new CacheManager($app);
 
         $cacheManager->store('alien_store');
+    }
+
+    public function testMakesRepositoryWithoutDispatcherWhenEventsDisabled()
+    {
+        $userConfig = [
+            'cache' => [
+                'stores' => [
+                    'my_store' => [
+                        'driver' => 'array',
+                    ],
+                    'my_store_without_events' => [
+                        'driver' => 'array',
+                        'events' => false,
+                    ],
+                ],
+            ],
+        ];
+
+        $app = $this->getApp($userConfig);
+        $app->bind(Dispatcher::class, fn () => new Event);
+
+        $cacheManager = new CacheManager($app);
+
+        // The repository will have an event dispatcher
+        $repo = $cacheManager->store('my_store');
+        $this->assertNotNull($repo->getEventDispatcher());
+
+        // This repository will not have an event dispatcher as 'with_events' is false
+        $repoWithoutEvents = $cacheManager->store('my_store_without_events');
+        $this->assertNull($repoWithoutEvents->getEventDispatcher());
     }
 
     protected function getApp(array $userConfig)

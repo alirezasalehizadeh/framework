@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 
 class EloquentPivotTest extends DatabaseTestCase
 {
-    protected function defineDatabaseMigrationsAfterDatabaseRefreshed()
+    protected function afterRefreshingDatabase()
     {
         Schema::create('users', function (Blueprint $table) {
             $table->increments('id');
@@ -91,17 +91,17 @@ class PivotTestUser extends Model
     public function activeSubscriptions()
     {
         return $this->belongsToMany(PivotTestProject::class, 'subscriptions', 'user_id', 'project_id')
-                    ->withPivotValue('status', 'active')
-                    ->withPivot('status')
-                    ->using(PivotTestSubscription::class);
+            ->withPivotValue('status', 'active')
+            ->withPivot('status')
+            ->using(PivotTestSubscription::class);
     }
 
     public function inactiveSubscriptions()
     {
         return $this->belongsToMany(PivotTestProject::class, 'subscriptions', 'user_id', 'project_id')
-                    ->withPivotValue('status', 'inactive')
-                    ->withPivot('status')
-                    ->using(PivotTestSubscription::class);
+            ->withPivotValue('status', 'inactive')
+            ->withPivot('status')
+            ->using(PivotTestSubscription::class);
     }
 }
 
@@ -114,7 +114,7 @@ class PivotTestProject extends Model
         return $this->belongsToMany(
             PivotTestUser::class, 'collaborators', 'project_id', 'user_id'
         )->withPivot('permissions')
-        ->using(PivotTestCollaborator::class);
+            ->using(PivotTestCollaborator::class);
     }
 
     public function contributors()

@@ -40,6 +40,24 @@ class ContainerTest extends TestCase
         $this->assertSame('Taylor', $container->make('name'));
     }
 
+    public function testAbstractCanBeBoundFromConcreteReturnType()
+    {
+        $container = new Container;
+        $container->bind(function (): IContainerContractStub|ContainerImplementationStub {
+            return new ContainerImplementationStub;
+        });
+        $container->singleton(function (): ContainerConcreteStub {
+            return new ContainerConcreteStub;
+        });
+
+        $this->assertInstanceOf(
+            IContainerContractStub::class,
+            $container->make(IContainerContractStub::class)
+        );
+
+        $this->assertTrue($container->isShared(ContainerConcreteStub::class));
+    }
+
     public function testBindIfDoesntRegisterIfServiceAlreadyRegistered()
     {
         $container = new Container;
@@ -289,6 +307,18 @@ class ContainerTest extends TestCase
         $this->assertSame('taylor', $instance->default);
     }
 
+    public function testResolutionOfClassWithDefaultParameters()
+    {
+        $container = new Container;
+        $instance = $container->make(ContainerClassWithDefaultValueStub::class);
+        $this->assertInstanceOf(ContainerConcreteStub::class, $instance->noDefault);
+        $this->assertSame(null, $instance->default);
+
+        $container->bind(ContainerConcreteStub::class, fn () => new ContainerConcreteStub);
+        $instance = $container->make(ContainerClassWithDefaultValueStub::class);
+        $this->assertInstanceOf(ContainerConcreteStub::class, $instance->default);
+    }
+
     public function testBound()
     {
         $container = new Container;
@@ -516,13 +546,13 @@ class ContainerTest extends TestCase
     public function testMakeWithMethodIsAnAliasForMakeMethod()
     {
         $mock = $this->getMockBuilder(Container::class)
-                     ->onlyMethods(['make'])
-                     ->getMock();
+            ->onlyMethods(['make'])
+            ->getMock();
 
         $mock->expects($this->once())
-             ->method('make')
-             ->with(ContainerDefaultValueStub::class, ['default' => 'laurence'])
-             ->willReturn(new stdClass);
+            ->method('make')
+            ->with(ContainerDefaultValueStub::class, ['default' => 'laurence'])
+            ->willReturn(new stdClass);
 
         $result = $mock->makeWith(ContainerDefaultValueStub::class, ['default' => 'laurence']);
 
@@ -672,8 +702,8 @@ class ContainerTest extends TestCase
         $container->bind(IContainerContractStub::class, ContainerImplementationStubTwo::class);
 
         $container->when(ContainerContextualBindingCallTarget::class)
-                ->needs(IContainerContractStub::class)
-                ->give(ContainerImplementationStub::class);
+            ->needs(IContainerContractStub::class)
+            ->give(ContainerImplementationStub::class);
 
         $result = $container->call([new ContainerContextualBindingCallTarget, 'work']);
 
@@ -762,6 +792,15 @@ class ContainerDefaultValueStub
     {
         $this->stub = $stub;
         $this->default = $default;
+    }
+}
+
+class ContainerClassWithDefaultValueStub
+{
+    public function __construct(
+        public ?ContainerConcreteStub $noDefault,
+        public ?ContainerConcreteStub $default = null,
+    ) {
     }
 }
 

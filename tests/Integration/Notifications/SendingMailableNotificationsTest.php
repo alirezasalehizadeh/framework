@@ -4,18 +4,19 @@ namespace Illuminate\Tests\Integration\Notifications;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\View;
+use Illuminate\Support\Stringable;
 use Orchestra\Testbench\TestCase;
 
 class SendingMailableNotificationsTest extends TestCase
 {
-    public $mailer;
+    use RefreshDatabase;
 
-    protected function getEnvironmentSetUp($app)
+    protected function defineEnvironment($app)
     {
         $app['config']->set('mail.driver', 'array');
 
@@ -23,18 +24,21 @@ class SendingMailableNotificationsTest extends TestCase
 
         $app['config']->set('mail.markdown.theme', 'blank');
 
-        View::addLocation(__DIR__.'/Fixtures');
+        $app['view']->addLocation(__DIR__.'/Fixtures');
     }
 
-    protected function setUp(): void
+    protected function afterRefreshingDatabase()
     {
-        parent::setUp();
-
         Schema::create('users', function (Blueprint $table) {
             $table->increments('id');
             $table->string('email');
             $table->string('name')->nullable();
         });
+    }
+
+    protected function beforeRefreshingDatabase()
+    {
+        Schema::dropIfExists('users');
     }
 
     public function testMarkdownNotification()
@@ -47,7 +51,7 @@ class SendingMailableNotificationsTest extends TestCase
 
         $email = app('mailer')->getSymfonyTransport()->messages()[0]->getOriginalMessage()->toString();
 
-        $cid = explode(' cid:', str($email)->explode("\r\n")
+        $cid = explode(' cid:', (new Stringable($email))->explode("\r\n")
             ->filter(fn ($line) => str_contains($line, 'Embed content: cid:'))
             ->first())[1];
 

@@ -80,6 +80,20 @@ class TrustProxiesTest extends TestCase
     }
 
     /**
+     * Test the next most typical usage of TrustedProxies:
+     * Trusted X-Forwarded-For header, REMOTE_ADDR for TrustedProxies.
+     */
+    public function test_trusted_proxy_sets_trusted_proxies_with_REMOTE_ADDR()
+    {
+        $trustedProxy = $this->createTrustedProxy($this->headerAll, 'REMOTE_ADDR');
+        $request = $this->createProxiedRequest();
+
+        $trustedProxy->handle($request, function ($request) {
+            $this->assertSame('173.174.200.38', $request->getClientIp(), 'Assert trusted proxy x-forwarded-for header used with REMOTE_ADDR proxy setting');
+        });
+    }
+
+    /**
      * Test the most typical usage of TrustProxies:
      * Trusted X-Forwarded-For header.
      */
@@ -120,7 +134,7 @@ class TrustProxiesTest extends TestCase
     /**
      * Test X-Forwarded-For header with multiple IP addresses, with some of those being trusted.
      */
-    public function test_get_client_ip_with_muliple_ip_addresses_some_of_which_are_trusted()
+    public function test_get_client_ip_with_multiple_ip_addresses_some_of_which_are_trusted()
     {
         $trustedProxy = $this->createTrustedProxy($this->headerAll, ['192.168.10.10', '192.0.2.199']);
 
@@ -143,7 +157,7 @@ class TrustProxiesTest extends TestCase
     /**
      * Test X-Forwarded-For header with multiple IP addresses, with * wildcard trusting of all proxies.
      */
-    public function test_get_client_ip_with_muliple_ip_addresses_all_proxies_are_trusted()
+    public function test_get_client_ip_with_multiple_ip_addresses_all_proxies_are_trusted()
     {
         $trustedProxy = $this->createTrustedProxy($this->headerAll, '*');
 

@@ -4,13 +4,12 @@ namespace Illuminate\Tests\Broadcasting;
 
 use Illuminate\Broadcasting\Broadcasters\Broadcaster;
 use Illuminate\Broadcasting\Broadcasters\UsePusherChannelConventions;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class UsePusherChannelsNamesTest extends TestCase
 {
-    /**
-     * @dataProvider channelsProvider
-     */
+    #[DataProvider('channelsProvider')]
     public function testChannelNameNormalization($requestChannelName, $normalizedName)
     {
         $broadcaster = new FakeBroadcasterUsingPusherChannelsNames;
@@ -31,9 +30,20 @@ class UsePusherChannelsNamesTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider channelsProvider
-     */
+    public function testChannelNamePatternMatching()
+    {
+        $broadcaster = new FakeBroadcasterUsingPusherChannelsNames;
+
+        $this->assertEquals(
+            0,
+            $broadcaster->testChannelNameMatchesPattern(
+                'TestChannel',
+                'Test.{id}'
+            )
+        );
+    }
+
+    #[DataProvider('channelsProvider')]
     public function testIsGuardedChannel($requestChannelName, $_, $guarded)
     {
         $broadcaster = new FakeBroadcasterUsingPusherChannelsNames;
@@ -105,5 +115,10 @@ class FakeBroadcasterUsingPusherChannelsNames extends Broadcaster
     public function broadcast(array $channels, $event, array $payload = [])
     {
         //
+    }
+
+    public function testChannelNameMatchesPattern($channel, $pattern)
+    {
+        return $this->channelNameMatchesPattern($channel, $pattern);
     }
 }

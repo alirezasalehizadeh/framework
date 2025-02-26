@@ -2,6 +2,7 @@
 
 namespace Illuminate\Tests\View;
 
+use Closure;
 use Illuminate\Config\Repository as Config;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Container\BindingResolutionException;
@@ -10,6 +11,7 @@ use Illuminate\Contracts\View\Factory as FactoryContract;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\HtmlString;
 use Illuminate\View\Component;
+use Illuminate\View\ComponentSlot;
 use Illuminate\View\Factory;
 use Illuminate\View\View;
 use Mockery as m;
@@ -72,6 +74,42 @@ class ComponentTest extends TestCase
         $this->assertSame($view, $component->resolveView());
     }
 
+    public function testRenderingStringClosureFromComponent()
+    {
+        $this->config->shouldReceive('get')->once()->with('view.compiled')->andReturn('/tmp');
+        $this->viewFactory->shouldReceive('exists')->once()->andReturn(false);
+        $this->viewFactory->shouldReceive('addNamespace')->once()->with('__components', '/tmp');
+
+        $component = new class() extends Component
+        {
+            protected $title;
+
+            public function __construct($title = 'World')
+            {
+                $this->title = $title;
+            }
+
+            public function render()
+            {
+                return function (array $data) {
+                    return "<p>Hello {$this->title}</p>";
+                };
+            }
+        };
+
+        $closure = $component->resolveView();
+
+        $viewPath = $closure([]);
+
+        $this->viewFactory->shouldReceive('make')->with($viewPath, [], [])->andReturn('<p>Hello World</p>');
+
+        $this->assertInstanceOf(Closure::class, $closure);
+        $this->assertSame('__components::9cc08f5001b343c093ee1a396da820dc', $viewPath);
+
+        $hash = str_replace('__components::', '', $viewPath);
+        $this->assertSame('<p>Hello World</p>', file_get_contents("/tmp/{$hash}.blade.php"));
+    }
+
     public function testRegularViewsGetReturnedUsingViewMethod()
     {
         $view = m::mock(View::class);
@@ -92,7 +130,7 @@ class ComponentTest extends TestCase
         $this->assertSame('alert', $component->resolveView());
     }
 
-    public function testHtmlablesGetReturned()
+    public function testHtmlableGetReturned()
     {
         $component = new TestHtmlableReturningViewComponent;
 
@@ -149,9 +187,14 @@ class ComponentTest extends TestCase
     {
         $component = new TestInlineViewComponent;
 
-        Component::resolveComponentsUsing(fn () => $component);
+        Component::resolveComponentsUsing(function ($class, $data) use ($component) {
+            $this->assertSame(Component::class, $class, 'It takes the component class name as the first parameter.');
+            $this->assertSame(['foo' => 'bar'], $data, 'It takes the given data as the second parameter.');
 
-        $this->assertSame($component, Component::resolve('bar'));
+            return $component;
+        });
+
+        $this->assertSame($component, Component::resolve(['foo' => 'bar']));
     }
 
     public function testBladeViewCacheWithRegularViewNameViewComponent()
@@ -267,6 +310,63 @@ class ComponentTest extends TestCase
 
         Component::forgetFactory();
         $this->assertNotSame($this->viewFactory, $getFactory($inline));
+    }
+
+    public function testComponentSlotIsEmpty()
+    {
+        $slot = new ComponentSlot();
+
+        $this->assertTrue((bool) $slot->isEmpty());
+    }
+
+    public function testComponentSlotSanitizedEmpty()
+    {
+        // default sanitizer should remove all html tags
+        $slot = new ComponentSlot('<!-- test -->');
+
+        $linebreakingSlot = new ComponentSlot("\n  \t");
+
+        $moreComplexSlot = new ComponentSlot('<!--
+        <p>commented HTML</p>
+        <img border="0" src="" alt="">
+        -->');
+
+        $this->assertFalse((bool) $slot->hasActualContent());
+        $this->assertFalse((bool) $linebreakingSlot->hasActualContent('trim'));
+        $this->assertFalse((bool) $moreComplexSlot->hasActualContent());
+    }
+
+    public function testComponentSlotSanitizedNotEmpty()
+    {
+        // default sanitizer should remove all html tags
+        $slot = new ComponentSlot('<!-- test -->not empty');
+
+        $linebreakingSlot = new ComponentSlot("\ntest  \t");
+
+        $moreComplexSlot = new ComponentSlot('before<!--
+        <p>commented HTML</p>
+        <img border="0" src="" alt="">
+        -->after');
+
+        $this->assertTrue((bool) $slot->hasActualContent());
+        $this->assertTrue((bool) $linebreakingSlot->hasActualContent('trim'));
+        $this->assertTrue((bool) $moreComplexSlot->hasActualContent());
+    }
+
+    public function testComponentSlotIsNotEmpty()
+    {
+        $slot = new ComponentSlot('test');
+
+        $anotherSlot = new ComponentSlot('test<!-- test -->');
+
+        $moreComplexSlot = new ComponentSlot('t<!--
+        <p>Look at this cool image:</p>
+        <img border="0" src="pic_trulli.jpg" alt="Trulli">
+        -->est');
+
+        $this->assertTrue((bool) $slot->hasActualContent());
+        $this->assertTrue((bool) $anotherSlot->hasActualContent());
+        $this->assertTrue((bool) $moreComplexSlot->hasActualContent());
     }
 }
 

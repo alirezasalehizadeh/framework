@@ -180,7 +180,7 @@ class FoundationDocsCommandTest extends TestCase
         $this->artisan('docs');
     }
 
-    public function testItBubblesUpNonProcessInterruptExceptionsInAskStratgies()
+    public function testItBubblesUpNonProcessInterruptExceptionsInAskStrategies()
     {
         putenv('ARTISAN_DOCS_ASK_STRATEGY='.__DIR__.'/fixtures/process-failure-strategy.php');
 
@@ -296,7 +296,7 @@ Working directory: expected-working-directory');
             ->assertSuccessful();
     }
 
-    public function testGuessedMatchesThatDirectlyContainTheGivenStringRankHigerThanArbitraryMatches()
+    public function testGuessedMatchesThatDirectlyContainTheGivenStringRankHigherThanArbitraryMatches()
     {
         $this->artisan('docs ora')
             ->expectsOutputToContain('Opening the docs to: https://laravel.com/docs/8.x/filesystem')

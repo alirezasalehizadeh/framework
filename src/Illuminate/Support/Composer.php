@@ -6,7 +6,6 @@ use Closure;
 use Illuminate\Filesystem\Filesystem;
 use RuntimeException;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
 
 class Composer
@@ -46,7 +45,7 @@ class Composer
      *
      * @throw \RuntimeException
      */
-    protected function hasPackage($package)
+    public function hasPackage($package)
     {
         $composer = json_decode(file_get_contents($this->findComposerFile()), true);
 
@@ -60,18 +59,19 @@ class Composer
      * @param  array<int, string>  $packages
      * @param  bool  $dev
      * @param  \Closure|\Symfony\Component\Console\Output\OutputInterface|null  $output
+     * @param  string|null  $composerBinary
      * @return bool
      */
-    public function requirePackages(array $packages, bool $dev = false, Closure|OutputInterface $output = null)
+    public function requirePackages(array $packages, bool $dev = false, Closure|OutputInterface|null $output = null, $composerBinary = null)
     {
-        $command = collect([
-            ...$this->findComposer(),
+        $command = (new Collection([
+            ...$this->findComposer($composerBinary),
             'require',
             ...$packages,
-        ])
-        ->when($dev, function ($command) {
-            $command->push('--dev');
-        })->all();
+        ]))
+            ->when($dev, function ($command) {
+                $command->push('--dev');
+            })->all();
 
         return 0 === $this->getProcess($command, ['COMPOSER_MEMORY_LIMIT' => '-1'])
             ->run(
@@ -88,18 +88,19 @@ class Composer
      * @param  array<int, string>  $packages
      * @param  bool  $dev
      * @param  \Closure|\Symfony\Component\Console\Output\OutputInterface|null  $output
+     * @param  string|null  $composerBinary
      * @return bool
      */
-    public function removePackages(array $packages, bool $dev = false, Closure|OutputInterface $output = null)
+    public function removePackages(array $packages, bool $dev = false, Closure|OutputInterface|null $output = null, $composerBinary = null)
     {
-        $command = collect([
-            ...$this->findComposer(),
+        $command = (new Collection([
+            ...$this->findComposer($composerBinary),
             'remove',
             ...$packages,
-        ])
-        ->when($dev, function ($command) {
-            $command->push('--dev');
-        })->all();
+        ]))
+            ->when($dev, function ($command) {
+                $command->push('--dev');
+            })->all();
 
         return 0 === $this->getProcess($command, ['COMPOSER_MEMORY_LIMIT' => '-1'])
             ->run(
@@ -137,13 +138,14 @@ class Composer
      * Regenerate the Composer autoloader files.
      *
      * @param  string|array  $extra
+     * @param  string|null  $composerBinary
      * @return int
      */
-    public function dumpAutoloads($extra = '')
+    public function dumpAutoloads($extra = '', $composerBinary = null)
     {
         $extra = $extra ? (array) $extra : [];
 
-        $command = array_merge($this->findComposer(), ['dump-autoload'], $extra);
+        $command = array_merge($this->findComposer($composerBinary), ['dump-autoload'], $extra);
 
         return $this->getProcess($command)->run();
     }
@@ -151,21 +153,25 @@ class Composer
     /**
      * Regenerate the optimized Composer autoloader files.
      *
+     * @param  string|null  $composerBinary
      * @return int
      */
-    public function dumpOptimized()
+    public function dumpOptimized($composerBinary = null)
     {
-        return $this->dumpAutoloads('--optimize');
+        return $this->dumpAutoloads('--optimize', $composerBinary);
     }
 
     /**
      * Get the Composer binary / command for the environment.
      *
+     * @param  string|null  $composerBinary
      * @return array
      */
-    public function findComposer()
+    public function findComposer($composerBinary = null)
     {
-        if ($this->files->exists($this->workingPath.'/composer.phar')) {
+        if (! is_null($composerBinary) && $this->files->exists($composerBinary)) {
+            return [$this->phpBinary(), $composerBinary];
+        } elseif ($this->files->exists($this->workingPath.'/composer.phar')) {
             return [$this->phpBinary(), 'composer.phar'];
         }
 
@@ -197,7 +203,7 @@ class Composer
      */
     protected function phpBinary()
     {
-        return ProcessUtils::escapeArgument((new PhpExecutableFinder)->find(false));
+        return php_binary();
     }
 
     /**

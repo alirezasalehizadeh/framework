@@ -6,6 +6,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Stringable;
+use League\CommonMark\Environment\EnvironmentBuilderInterface;
+use League\CommonMark\Extension\ExtensionInterface;
 use PHPUnit\Framework\TestCase;
 
 class SupportStringableTest extends TestCase
@@ -107,6 +109,14 @@ class SupportStringableTest extends TestCase
         $this->assertSame('LaraCons', (string) $this->stringable('LaraCon')->pluralStudly(-2));
     }
 
+    public function testPluralPascal()
+    {
+        $this->assertSame('LaraCons', (string) $this->stringable('LaraCon')->pluralPascal(2));
+        $this->assertSame('LaraCon', (string) $this->stringable('LaraCon')->pluralPascal(1));
+        $this->assertSame('LaraCons', (string) $this->stringable('LaraCon')->pluralPascal(-2));
+        $this->assertSame('LaraCon', (string) $this->stringable('LaraCon')->pluralPascal(-1));
+    }
+
     public function testMatch()
     {
         $stringable = $this->stringable('foo bar');
@@ -121,6 +131,12 @@ class SupportStringableTest extends TestCase
 
         $this->assertEquals(['un', 'ly'], $stringable->matchAll('/f(\w*)/')->all());
         $this->assertTrue($stringable->matchAll('/nothing/')->isEmpty());
+    }
+
+    public function testTake()
+    {
+        $this->assertSame('ab', (string) $this->stringable('abcdef')->take(2));
+        $this->assertSame('ef', (string) $this->stringable('abcdef')->take(-2));
     }
 
     public function testTest()
@@ -202,6 +218,14 @@ class SupportStringableTest extends TestCase
         }, function ($stringable) {
             return $stringable->studly();
         }));
+    }
+
+    public function testDedup()
+    {
+        $this->assertSame(' laravel php framework ', (string) $this->stringable(' laravel   php  framework ')->deduplicate());
+        $this->assertSame('what', (string) $this->stringable('whaaat')->deduplicate('a'));
+        $this->assertSame('/some/odd/path/', (string) $this->stringable('/some//odd//path/')->deduplicate('/'));
+        $this->assertSame('ムだム', (string) $this->stringable('ムだだム')->deduplicate('だ'));
     }
 
     public function testDirname()
@@ -521,6 +545,12 @@ class SupportStringableTest extends TestCase
         $this->assertSame('u', (string) $this->stringable('ü')->ascii());
     }
 
+    public function testTransliterate()
+    {
+        $this->assertSame('HHH', (string) $this->stringable('🎂🚧🏆')->transliterate('H'));
+        $this->assertSame('Hello', (string) $this->stringable('🎂')->transliterate('Hello'));
+    }
+
     public function testNewLine()
     {
         $this->assertSame('Laravel'.PHP_EOL, (string) $this->stringable('Laravel')->newLine());
@@ -767,6 +797,15 @@ class SupportStringableTest extends TestCase
         $this->assertFalse($this->stringable('foo/bar/baz')->is('*FOO*'));
         $this->assertFalse($this->stringable('a')->is('A'));
 
+        // is not case sensitive
+        $this->assertTrue($this->stringable('a')->is('A', true));
+        $this->assertTrue($this->stringable('foo/bar/baz')->is('*BAZ*', true));
+        $this->assertTrue($this->stringable('a/')->is(['A*', 'B*'], true));
+        $this->assertFalse($this->stringable('f/')->is(['A*', 'B*'], true));
+        $this->assertTrue($this->stringable('foo')->is('FOO', true));
+        $this->assertTrue($this->stringable('foo/bar/baz')->is('*FOO*', true));
+        $this->assertTrue($this->stringable('FOO/bar')->is('foo/*', true));
+
         // Accepts array of patterns
         $this->assertTrue($this->stringable('a/')->is(['a*', 'b*']));
         $this->assertTrue($this->stringable('b/')->is(['a*', 'b*']));
@@ -786,6 +825,38 @@ class SupportStringableTest extends TestCase
 
         // empty patterns
         $this->assertFalse($this->stringable('test')->is([]));
+    }
+
+    public function testIsWithMultilineStrings()
+    {
+        $this->assertFalse($this->stringable("/\n")->is('/'));
+        $this->assertTrue($this->stringable("/\n")->is('/*'));
+        $this->assertTrue($this->stringable("/\n")->is('*/*'));
+        $this->assertTrue($this->stringable("\n/\n")->is('*/*'));
+
+        $this->assertTrue($this->stringable("\n")->is('*'));
+        $this->assertTrue($this->stringable("\n\n")->is('*'));
+        $this->assertFalse($this->stringable("\n")->is(''));
+        $this->assertFalse($this->stringable("\n\n")->is(''));
+
+        $multilineValue = <<<'VALUE'
+        <?php
+
+        namespace Illuminate\Tests\Support;
+
+        use Exception;
+        VALUE;
+
+        $this->assertTrue($this->stringable($multilineValue)->is($multilineValue));
+        $this->assertTrue($this->stringable($multilineValue)->is('*'));
+        $this->assertTrue($this->stringable($multilineValue)->is("*namespace Illuminate\Tests\*"));
+        $this->assertFalse($this->stringable($multilineValue)->is("namespace Illuminate\Tests\*"));
+        $this->assertFalse($this->stringable($multilineValue)->is("*namespace Illuminate\Tests"));
+        $this->assertTrue($this->stringable($multilineValue)->is('<?php*'));
+        $this->assertTrue($this->stringable($multilineValue)->is("<?php*namespace Illuminate\Tests\*"));
+        $this->assertFalse($this->stringable($multilineValue)->is('use Exception;'));
+        $this->assertFalse($this->stringable($multilineValue)->is('use Exception;*'));
+        $this->assertTrue($this->stringable($multilineValue)->is('*use Exception;'));
     }
 
     public function testKebab()
@@ -957,6 +1028,20 @@ class SupportStringableTest extends TestCase
         $this->assertSame('FooBarBaz', (string) $this->stringable('foo-bar_baz')->studly());
     }
 
+    public function testPascal()
+    {
+        $this->assertSame('LaravelPHPFramework', (string) $this->stringable('laravel_p_h_p_framework')->pascal());
+        $this->assertSame('LaravelPhpFramework', (string) $this->stringable('laravel_php_framework')->pascal());
+        $this->assertSame('LaravelPhPFramework', (string) $this->stringable('laravel-phP-framework')->pascal());
+        $this->assertSame('LaravelPhpFramework', (string) $this->stringable('laravel  -_-  php   -_-   framework   ')->pascal());
+
+        $this->assertSame('FooBar', (string) $this->stringable('fooBar')->pascal());
+        $this->assertSame('FooBar', (string) $this->stringable('foo_bar')->pascal());
+        $this->assertSame('FooBar', (string) $this->stringable('foo_bar')->pascal()); // test cache
+        $this->assertSame('FooBarBaz', (string) $this->stringable('foo-barBaz')->pascal());
+        $this->assertSame('FooBarBaz', (string) $this->stringable('foo-bar_baz')->pascal());
+    }
+
     public function testCamel()
     {
         $this->assertSame('laravelPHPFramework', (string) $this->stringable('Laravel_p_h_p_framework')->camel());
@@ -1016,6 +1101,23 @@ class SupportStringableTest extends TestCase
         $this->assertSame(1, $this->stringable('laravelPHPFramework')->substrCount('a', 1, 2));
         $this->assertSame(3, $this->stringable('laravelPHPFramework')->substrCount('a', 1, -2));
         $this->assertSame(1, $this->stringable('laravelPHPFramework')->substrCount('a', -10, -3));
+    }
+
+    public function testPosition()
+    {
+        $this->assertSame(7, $this->stringable('Hello, World!')->position('W'));
+        $this->assertSame(10, $this->stringable('This is a test string.')->position('test'));
+        $this->assertSame(23, $this->stringable('This is a test string, test again.')->position('test', 15));
+        $this->assertSame(0, $this->stringable('Hello, World!')->position('Hello'));
+        $this->assertSame(7, $this->stringable('Hello, World!')->position('World!'));
+        $this->assertSame(10, $this->stringable('This is a tEsT string.')->position('tEsT', 0, 'UTF-8'));
+        $this->assertSame(7, $this->stringable('Hello, World!')->position('W', -6));
+        $this->assertSame(18, $this->stringable('Äpfel, Birnen und Kirschen')->position('Kirschen', -10, 'UTF-8'));
+        $this->assertSame(9, $this->stringable('@%€/=!"][$')->position('$', 0, 'UTF-8'));
+        $this->assertFalse($this->stringable('Hello, World!')->position('w', 0, 'UTF-8'));
+        $this->assertFalse($this->stringable('Hello, World!')->position('X', 0, 'UTF-8'));
+        $this->assertFalse($this->stringable('')->position('test'));
+        $this->assertFalse($this->stringable('Hello, World!')->position('X'));
     }
 
     public function testSubstrReplace()
@@ -1101,12 +1203,37 @@ class SupportStringableTest extends TestCase
     {
         $this->assertEquals("<p><em>hello world</em></p>\n", $this->stringable('*hello world*')->markdown());
         $this->assertEquals("<h1>hello world</h1>\n", $this->stringable('# hello world')->markdown());
+
+        $extension = new class implements ExtensionInterface
+        {
+            public bool $configured = false;
+
+            public function register(EnvironmentBuilderInterface $environment): void
+            {
+                $this->configured = true;
+            }
+        };
+        $this->stringable('# hello world')->markdown([], [$extension]);
+        $this->assertTrue($extension->configured);
     }
 
     public function testInlineMarkdown()
     {
         $this->assertEquals("<em>hello world</em>\n", $this->stringable('*hello world*')->inlineMarkdown());
         $this->assertEquals("<a href=\"https://laravel.com\"><strong>Laravel</strong></a>\n", $this->stringable('[**Laravel**](https://laravel.com)')->inlineMarkdown());
+
+        $extension = new class implements ExtensionInterface
+        {
+            public bool $configured = false;
+
+            public function register(EnvironmentBuilderInterface $environment): void
+            {
+                $this->configured = true;
+            }
+        };
+
+        $this->stringable('# hello world')->inlineMarkdown([], [$extension]);
+        $this->assertTrue($extension->configured);
     }
 
     public function testMask()
@@ -1148,6 +1275,13 @@ class SupportStringableTest extends TestCase
         $this->assertEquals('"value"', $this->stringable('value')->wrap('"'));
     }
 
+    public function testUnwrap()
+    {
+        $this->assertEquals('value', $this->stringable('"value"')->unwrap('"'));
+        $this->assertEquals('bar', $this->stringable('foo-bar-baz')->unwrap('foo-', '-baz'));
+        $this->assertEquals('some: "json"', $this->stringable('{some: "json"}')->unwrap('{', '}'));
+    }
+
     public function testToHtmlString()
     {
         $this->assertEquals(
@@ -1162,6 +1296,21 @@ class SupportStringableTest extends TestCase
         $this->assertSame('before<br>after', (string) $this->stringable('before<br>after')->stripTags('<br>'));
         $this->assertSame('before<br>after', (string) $this->stringable('<strong>before</strong><br>after')->stripTags('<br>'));
         $this->assertSame('<strong>before</strong><br>after', (string) $this->stringable('<strong>before</strong><br>after')->stripTags('<br><strong>'));
+    }
+
+    public function testReplaceMatches()
+    {
+        $stringable = $this->stringable('Hello world!');
+        $result = $stringable->replaceMatches('/world/', function ($match) {
+            return strtoupper($match[0]);
+        });
+
+        $this->assertSame('Hello WORLD!', $result->value);
+
+        $stringable = $this->stringable('apple orange apple');
+        $result = $stringable->replaceMatches('/apple/', 'fruit', 1);
+
+        $this->assertSame('fruit orange apple', $result->value);
     }
 
     public function testScan()
@@ -1224,6 +1373,11 @@ class SupportStringableTest extends TestCase
         $this->assertFalse($this->stringable('no')->toBoolean());
     }
 
+    public function testNumbers()
+    {
+        $this->assertSame('5551234567', (string) $this->stringable('(555) 123-4567')->numbers());
+    }
+
     public function testToDate()
     {
         $current = Carbon::create(2020, 1, 1, 16, 30, 25);
@@ -1250,5 +1404,19 @@ class SupportStringableTest extends TestCase
         $this->assertSame('t', $str[4]);
         $this->assertTrue(isset($str[2]));
         $this->assertFalse(isset($str[10]));
+    }
+
+    public function testToBase64()
+    {
+        $this->assertSame(base64_encode('foo'), (string) $this->stringable('foo')->toBase64());
+        $this->assertSame(base64_encode('foobar'), (string) $this->stringable('foobar')->toBase64());
+        $this->assertSame(base64_encode('foobarbaz'), (string) $this->stringable('foobarbaz')->toBase64());
+    }
+
+    public function testFromBase64()
+    {
+        $this->assertSame('foo', (string) $this->stringable(base64_encode('foo'))->fromBase64());
+        $this->assertSame('foobar', (string) $this->stringable(base64_encode('foobar'))->fromBase64(true));
+        $this->assertSame('foobarbaz', (string) $this->stringable(base64_encode('foobarbaz'))->fromBase64());
     }
 }

@@ -50,7 +50,7 @@ class EnvironmentDecryptCommandTest extends TestCase
             ->assertExitCode(1);
     }
 
-    public function testItFailsWhenEncyptionFileCannotBeFound()
+    public function testItFailsWhenEncryptionFileCannotBeFound()
     {
         $this->filesystem->shouldReceive('exists')->andReturn(true);
 
@@ -283,5 +283,29 @@ class EnvironmentDecryptCommandTest extends TestCase
         $this->artisan('env:decrypt', ['--env' => 'production', '--key' => 'abcdefghijklmnop', '--filename' => '.env.staging.encrypted'])
             ->expectsOutputToContain('Invalid filename.')
             ->assertExitCode(1);
+    }
+
+    public function testItGeneratesTheEnvironmentFileWithInteractivelyUserProvidedKey()
+    {
+        $this->filesystem->shouldReceive('exists')
+            ->once()
+            ->andReturn(true)
+            ->shouldReceive('exists')
+            ->once()
+            ->andReturn(false)
+            ->shouldReceive('get')
+            ->once()
+            ->andReturn(
+                (new Encrypter($key = 'abcdefghijklmnop', 'aes-128-gcm'))
+                    ->encrypt('APP_NAME="Laravel Two"')
+            );
+
+        $this->artisan('env:decrypt', ['--cipher' => 'aes-128-gcm'])
+            ->expectsQuestion('What is the decryption key?', $key)
+            ->expectsOutputToContain('Environment successfully decrypted.')
+            ->assertExitCode(0);
+
+        $this->filesystem->shouldHaveReceived('put')
+            ->with(base_path('.env'), 'APP_NAME="Laravel Two"');
     }
 }

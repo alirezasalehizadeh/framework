@@ -40,7 +40,7 @@ class DocsCommand extends Command
      *
      * @var string
      */
-    protected $help = 'If you would like to perform a content search against the documention, you may call: <fg=green>php artisan docs -- </><fg=green;options=bold;>search query here</>';
+    protected $help = 'If you would like to perform a content search against the documentation, you may call: <fg=green>php artisan docs -- </><fg=green;options=bold;>search query here</>';
 
     /**
      * The HTTP client instance.
@@ -381,10 +381,10 @@ class DocsCommand extends Command
             return;
         }
 
-        $binary = Collection::make(match ($this->systemOsFamily) {
+        $binary = (new Collection(match ($this->systemOsFamily) {
             'Darwin' => ['open'],
             'Linux' => ['xdg-open', 'wslview'],
-        })->first(fn ($binary) => (new ExecutableFinder)->find($binary) !== null);
+        }))->first(fn ($binary) => (new ExecutableFinder)->find($binary) !== null);
 
         if ($binary === null) {
             $this->components->warn('Unable to open the URL on your system. You will need to open it yourself or create a custom opener for your system.');
@@ -475,7 +475,7 @@ class DocsCommand extends Command
      */
     protected function searchQuery()
     {
-        return Collection::make($_SERVER['argv'])->skip(3)->implode(' ');
+        return (new Collection($_SERVER['argv']))->skip(3)->implode(' ');
     }
 
     /**

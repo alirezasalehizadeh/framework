@@ -2,14 +2,16 @@
 
 namespace Illuminate\Tests\Integration\Database\MySql;
 
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 
-/**
- * @requires extension pdo_mysql
- * @requires OS Linux|Darwin
- */
+#[RequiresOperatingSystem('Linux|Darwin')]
+#[RequiresPhpExtension('pdo_mysql')]
 class DatabaseMySqlConnectionTest extends MySqlTestCase
 {
     const TABLE = 'player';
@@ -17,7 +19,7 @@ class DatabaseMySqlConnectionTest extends MySqlTestCase
     const JSON_COL = 'json_col';
     const FLOAT_VAL = 0.2;
 
-    protected function defineDatabaseMigrationsAfterDatabaseRefreshed()
+    protected function afterRefreshingDatabase()
     {
         if (! Schema::hasTable(self::TABLE)) {
             Schema::create(self::TABLE, function (Blueprint $table) {
@@ -32,9 +34,7 @@ class DatabaseMySqlConnectionTest extends MySqlTestCase
         Schema::drop(self::TABLE);
     }
 
-    /**
-     * @dataProvider floatComparisonsDataProvider
-     */
+    #[DataProvider('floatComparisonsDataProvider')]
     public function testJsonFloatComparison($value, $operator, $shouldMatch)
     {
         DB::table(self::TABLE)->insert([self::JSON_COL => '{"rank":'.self::FLOAT_VAL.'}']);
@@ -68,9 +68,7 @@ class DatabaseMySqlConnectionTest extends MySqlTestCase
         $this->assertEquals(self::FLOAT_VAL, DB::table(self::TABLE)->value(self::FLOAT_COL));
     }
 
-    /**
-     * @dataProvider jsonWhereNullDataProvider
-     */
+    #[DataProvider('jsonWhereNullDataProvider')]
     public function testJsonWhereNull($expected, $key, array $value = ['value' => 123])
     {
         DB::table(self::TABLE)->insert([self::JSON_COL => json_encode($value)]);
@@ -78,9 +76,7 @@ class DatabaseMySqlConnectionTest extends MySqlTestCase
         $this->assertSame($expected, DB::table(self::TABLE)->whereNull(self::JSON_COL.'->'.$key)->exists());
     }
 
-    /**
-     * @dataProvider jsonWhereNullDataProvider
-     */
+    #[DataProvider('jsonWhereNullDataProvider')]
     public function testJsonWhereNotNull($expected, $key, array $value = ['value' => 123])
     {
         DB::table(self::TABLE)->insert([self::JSON_COL => json_encode($value)]);
@@ -122,9 +118,7 @@ class DatabaseMySqlConnectionTest extends MySqlTestCase
         $this->assertSame(1, $updatedCount);
     }
 
-    /**
-     * @dataProvider jsonContainsKeyDataProvider
-     */
+    #[DataProvider('jsonContainsKeyDataProvider')]
     public function testWhereJsonContainsKey($count, $column)
     {
         DB::table(self::TABLE)->insert([
@@ -150,5 +144,28 @@ class DatabaseMySqlConnectionTest extends MySqlTestCase
             'mixed keys' => [1, 'json_col->foo[1]->baz'],
             'null value' => [1, 'json_col->bar'],
         ];
+    }
+
+    public function testLastInsertIdIsPreserved()
+    {
+        if (! Schema::hasTable('auto_id_table')) {
+            Schema::create('auto_id_table', function (Blueprint $table) {
+                $table->id();
+            });
+        }
+
+        try {
+            static $callbackExecuted = false;
+            DB::listen(function (QueryExecuted $event) use (&$callbackExecuted) {
+                DB::getPdo()->query('SELECT 1');
+                $callbackExecuted = true;
+            });
+
+            $id = DB::table('auto_id_table')->insertGetId([]);
+            $this->assertTrue($callbackExecuted, 'The query listener was not executed.');
+            $this->assertEquals(1, $id);
+        } finally {
+            Schema::drop('auto_id_table');
+        }
     }
 }

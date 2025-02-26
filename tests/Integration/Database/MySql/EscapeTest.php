@@ -2,12 +2,12 @@
 
 namespace Illuminate\Tests\Integration\Database\MySql;
 
+use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use RuntimeException;
 
-/**
- * @requires extension pdo_mysql
- * @requires OS Linux|Darwin
- */
+#[RequiresOperatingSystem('Linux|Darwin')]
+#[RequiresPhpExtension('pdo_mysql')]
 class EscapeTest extends MySqlTestCase
 {
     public function testEscapeInt()
@@ -60,5 +60,12 @@ class EscapeTest extends MySqlTestCase
         $this->expectException(RuntimeException::class);
 
         $this->app['db']->escape("I am hiding a \00 byte");
+    }
+
+    public function testEscapeArray()
+    {
+        $this->expectException(RuntimeException::class);
+
+        $this->app['db']->escape(['a', 'b']);
     }
 }

@@ -213,6 +213,22 @@ class FoundationFormRequestTest extends TestCase
         $this->assertEquals([], $request->all());
     }
 
+    public function testRequestWithGetRules()
+    {
+        FoundationTestFormRequestWithGetRules::$useRuleSet = 'a';
+        $request = $this->createRequest(['a' => 1], FoundationTestFormRequestWithGetRules::class);
+
+        $request->validateResolved();
+        $this->assertEquals(['a' => 1], $request->all());
+
+        $this->expectException(ValidationException::class);
+        FoundationTestFormRequestWithGetRules::$useRuleSet = 'b';
+
+        $request = $this->createRequest(['a' => 1], FoundationTestFormRequestWithGetRules::class);
+
+        $request->validateResolved();
+    }
+
     /**
      * Catch the given exception thrown from the executor, and return it.
      *
@@ -256,7 +272,7 @@ class FoundationFormRequestTest extends TestCase
         $request = $class::create('/', 'GET', $payload);
 
         return $request->setRedirector($this->createMockRedirector($request))
-                       ->setContainer($container);
+            ->setContainer($container);
     }
 
     /**
@@ -268,7 +284,7 @@ class FoundationFormRequestTest extends TestCase
     protected function createValidationFactory($container)
     {
         $translator = m::mock(Translator::class)->shouldReceive('get')
-                       ->zeroOrMoreTimes()->andReturn('error')->getMock();
+            ->zeroOrMoreTimes()->andReturn('error')->getMock();
 
         return new ValidationFactory($translator, $container);
     }
@@ -284,13 +300,13 @@ class FoundationFormRequestTest extends TestCase
         $redirector = $this->mocks['redirector'] = m::mock(Redirector::class);
 
         $redirector->shouldReceive('getUrlGenerator')->zeroOrMoreTimes()
-                   ->andReturn($generator = $this->createMockUrlGenerator());
+            ->andReturn($generator = $this->createMockUrlGenerator());
 
         $redirector->shouldReceive('to')->zeroOrMoreTimes()
-                   ->andReturn($this->createMockRedirectResponse());
+            ->andReturn($this->createMockRedirectResponse());
 
         $generator->shouldReceive('previous')->zeroOrMoreTimes()
-                  ->andReturn('previous');
+            ->andReturn('previous');
 
         return $redirector;
     }
@@ -480,5 +496,23 @@ class FoundationTestFormRequestWithoutRulesMethod extends FormRequest
     public function authorize()
     {
         return true;
+    }
+}
+
+class FoundationTestFormRequestWithGetRules extends FormRequest
+{
+    public static $useRuleSet = 'a';
+
+    protected function validationRules(): array
+    {
+        if (self::$useRuleSet === 'a') {
+            return [
+                'a' => ['required', 'int', 'min:1'],
+            ];
+        } else {
+            return [
+                'a' => ['required', 'int', 'min:2'],
+            ];
+        }
     }
 }

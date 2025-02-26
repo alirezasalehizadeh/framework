@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Mockery as m;
 use PHPUnit\Framework\TestCase;
@@ -64,6 +65,43 @@ class DatabaseEloquentMorphTest extends TestCase
         $model2 = new EloquentMorphResetModelStub;
         $model2->id = 2;
         $relation->addEagerConstraints([$model1, $model2]);
+    }
+
+    public function testMorphRelationUpsertFillsForeignKey()
+    {
+        $relation = $this->getManyRelation();
+
+        $relation->getQuery()->shouldReceive('upsert')->once()->with(
+            [
+                ['email' => 'foo3', 'name' => 'bar', $relation->getForeignKeyName() => $relation->getParentKey(), $relation->getMorphType() => $relation->getMorphClass()],
+            ],
+            ['email'],
+            ['name']
+        );
+
+        $relation->upsert(
+            ['email' => 'foo3', 'name' => 'bar'],
+            ['email'],
+            ['name']
+        );
+
+        $relation->getQuery()->shouldReceive('upsert')->once()->with(
+            [
+                ['email' => 'foo3', 'name' => 'bar', $relation->getForeignKeyName() => $relation->getParentKey(), $relation->getMorphType() => $relation->getMorphClass()],
+                ['name' => 'bar2', 'email' => 'foo2', $relation->getForeignKeyName() => $relation->getParentKey(), $relation->getMorphType() => $relation->getMorphClass()],
+            ],
+            ['email'],
+            ['name']
+        );
+
+        $relation->upsert(
+            [
+                ['email' => 'foo3', 'name' => 'bar'],
+                ['name' => 'bar2', 'email' => 'foo2'],
+            ],
+            ['email'],
+            ['name']
+        );
     }
 
     public function testMakeFunctionOnMorph()
@@ -443,7 +481,8 @@ class DatabaseEloquentMorphTest extends TestCase
 
     protected function getOneRelation()
     {
-        $builder = m::mock(Builder::class);
+        $queryBuilder = m::mock(QueryBuilder::class);
+        $builder = m::mock(Builder::class, [$queryBuilder]);
         $builder->shouldReceive('whereNotNull')->once()->with('table.morph_id');
         $builder->shouldReceive('where')->once()->with('table.morph_id', '=', 1);
         $related = m::mock(Model::class);

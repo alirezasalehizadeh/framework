@@ -6,6 +6,7 @@ use Illuminate\Foundation\Testing\Concerns\InteractsWithRedis;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Tests\Integration\Cache\Fixtures\Unserializable;
 use Orchestra\Testbench\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class Psr6RedisTest extends TestCase
 {
@@ -20,14 +21,12 @@ class Psr6RedisTest extends TestCase
 
     protected function tearDown(): void
     {
-        parent::tearDown();
-
         $this->tearDownRedis();
+
+        parent::tearDown();
     }
 
-    /**
-     * @dataProvider redisClientDataProvider
-     */
+    #[DataProvider('redisClientDataProvider')]
     public function testTransactionIsNotOpenedWhenSerializationFails($redisClient): void
     {
         $this->app['config']['cache.default'] = 'redis';

@@ -8,6 +8,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Translation\ArrayLoader;
 use Illuminate\Translation\Translator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\ValidationServiceProvider;
 use Illuminate\Validation\Validator;
@@ -134,6 +135,52 @@ class ValidationFileRuleTest extends TestCase
         );
     }
 
+    public function testSingleExtension()
+    {
+        $this->fails(
+            File::default()->extensions('png'),
+            UploadedFile::fake()->createWithContent('foo', file_get_contents(__DIR__.'/fixtures/image.png')),
+            ['validation.extensions']
+        );
+
+        $this->fails(
+            File::default()->extensions('png'),
+            UploadedFile::fake()->createWithContent('foo.jpg', file_get_contents(__DIR__.'/fixtures/image.png')),
+            ['validation.extensions']
+        );
+
+        $this->fails(
+            File::default()->extensions('jpeg'),
+            UploadedFile::fake()->createWithContent('foo.jpg', file_get_contents(__DIR__.'/fixtures/image.png')),
+            ['validation.extensions']
+        );
+
+        $this->passes(
+            File::default()->extensions('png'),
+            UploadedFile::fake()->createWithContent('foo.png', file_get_contents(__DIR__.'/fixtures/image.png')),
+        );
+    }
+
+    public function testMultipleExtensions()
+    {
+        $this->fails(
+            File::default()->extensions(['png', 'jpeg', 'jpg']),
+            UploadedFile::fake()->createWithContent('foo', file_get_contents(__DIR__.'/fixtures/image.png')),
+            ['validation.extensions']
+        );
+
+        $this->fails(
+            File::default()->extensions(['png', 'jpeg']),
+            UploadedFile::fake()->createWithContent('foo.jpg', file_get_contents(__DIR__.'/fixtures/image.png')),
+            ['validation.extensions']
+        );
+
+        $this->passes(
+            File::default()->extensions(['png', 'jpeg', 'jpg']),
+            UploadedFile::fake()->createWithContent('foo.png', file_get_contents(__DIR__.'/fixtures/image.png')),
+        );
+    }
+
     public function testImage()
     {
         $this->fails(
@@ -145,6 +192,39 @@ class ValidationFileRuleTest extends TestCase
         $this->passes(
             File::image(),
             UploadedFile::fake()->image('foo.png'),
+        );
+    }
+
+    public function testImageFailsOnSvgByDefault()
+    {
+        $maliciousSvgFileWithXSS = UploadedFile::fake()->createWithContent(
+            name: 'foo.svg',
+            content: <<<'XML'
+                    <svg xmlns="http://www.w3.org/2000/svg" width="383" height="97" viewBox="0 0 383 97">
+                        <text x="10" y="50" font-size="30" fill="black">XSS Logo</text>
+                        <script>alert('XSS');</script>
+                    </svg>
+                    XML
+        );
+
+        $this->fails(
+            File::image(),
+            $maliciousSvgFileWithXSS,
+            ['validation.image']
+        );
+        $this->fails(
+            Rule::imageFile(),
+            $maliciousSvgFileWithXSS,
+            ['validation.image']
+        );
+
+        $this->passes(
+            File::image(allowSvg: true),
+            $maliciousSvgFileWithXSS
+        );
+        $this->passes(
+            Rule::imageFile(allowSvg: true),
+            $maliciousSvgFileWithXSS
         );
     }
 
@@ -296,6 +376,21 @@ class ValidationFileRuleTest extends TestCase
                 UploadedFile::fake()->create('foo.csv'),
             ]
         );
+    }
+
+    public function testItUsesTheCorrectValidationMessageForFile(): void
+    {
+        file_put_contents($path = __DIR__.'/test.json', 'this-is-a-test');
+
+        $file = new \Illuminate\Http\File($path);
+
+        $this->fails(
+            ['max:0'],
+            $file,
+            ['validation.max.file']
+        );
+
+        unlink($path);
     }
 
     public function testItCanSetDefaultUsing()

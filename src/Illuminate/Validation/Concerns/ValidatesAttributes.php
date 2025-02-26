@@ -15,8 +15,10 @@ use Egulias\EmailValidator\Validation\MultipleValidationWithAnd;
 use Egulias\EmailValidator\Validation\NoRFCWarningsValidation;
 use Egulias\EmailValidator\Validation\RFCValidation;
 use Exception;
+use Illuminate\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Exceptions\MathException;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
@@ -297,6 +299,8 @@ trait ValidatesAttributes
     {
         $firstDate = $this->getDateTimeWithOptionalFormat($format, $first);
 
+        $format = $this->getDateFormat($second) ?: $format;
+
         if (! $secondDate = $this->getDateTimeWithOptionalFormat($format, $second)) {
             if (is_null($second = $this->getValue($second))) {
                 return true;
@@ -421,6 +425,18 @@ trait ValidatesAttributes
     }
 
     /**
+     * Validate that an attribute is a list.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @return bool
+     */
+    public function validateList($attribute, $value)
+    {
+        return is_array($value) && array_is_list($value);
+    }
+
+    /**
      * Validate that an array has all of the given keys.
      *
      * @param  string  $attribute
@@ -480,11 +496,35 @@ trait ValidatesAttributes
      *
      * @param  string  $attribute
      * @param  mixed  $value
+     * @param  array{0: string}  $parameters
      * @return bool
      */
-    public function validateConfirmed($attribute, $value)
+    public function validateConfirmed($attribute, $value, $parameters)
     {
-        return $this->validateSame($attribute, $value, [$attribute.'_confirmation']);
+        return $this->validateSame($attribute, $value, [$parameters[0] ?? $attribute.'_confirmation']);
+    }
+
+    /**
+     * Validate an attribute contains a list of values.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array<int, int|string>  $parameters
+     * @return bool
+     */
+    public function validateContains($attribute, $value, $parameters)
+    {
+        if (! is_array($value)) {
+            return false;
+        }
+
+        foreach ($parameters as $parameter) {
+            if (! in_array($parameter, $value)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -704,12 +744,12 @@ trait ValidatesAttributes
 
         $parameters = $this->parseNamedParameters($parameters);
 
-        if ($this->failsBasicDimensionChecks($parameters, $width, $height) ||
-            $this->failsRatioCheck($parameters, $width, $height)) {
-            return false;
-        }
-
-        return true;
+        return ! (
+            $this->failsBasicDimensionChecks($parameters, $width, $height) ||
+            $this->failsRatioCheck($parameters, $width, $height) ||
+            $this->failsMinRatioCheck($parameters, $width, $height) ||
+            $this->failsMaxRatioCheck($parameters, $width, $height)
+        );
     }
 
     /**
@@ -748,9 +788,51 @@ trait ValidatesAttributes
             [1, 1], array_filter(sscanf($parameters['ratio'], '%f/%d'))
         );
 
-        $precision = 1 / (max($width, $height) + 1);
+        $precision = 1 / (max(($width + $height) / 2, $height) + 1);
 
         return abs($numerator / $denominator - $width / $height) > $precision;
+    }
+
+    /**
+     * Determine if the given parameters fail a dimension minimum ratio check.
+     *
+     * @param  array<string,string>  $parameters
+     * @param  int  $width
+     * @param  int  $height
+     * @return bool
+     */
+    private function failsMinRatioCheck($parameters, $width, $height)
+    {
+        if (! isset($parameters['min_ratio'])) {
+            return false;
+        }
+
+        [$minNumerator, $minDenominator] = array_replace(
+            [1, 1], array_filter(sscanf($parameters['min_ratio'], '%f/%d'))
+        );
+
+        return ($width / $height) > ($minNumerator / $minDenominator);
+    }
+
+    /**
+     * Determine if the given parameters fail a dimension maximum ratio check.
+     *
+     * @param  array<string,string>  $parameters
+     * @param  int  $width
+     * @param  int  $height
+     * @return bool
+     */
+    private function failsMaxRatioCheck($parameters, $width, $height)
+    {
+        if (! isset($parameters['max_ratio'])) {
+            return false;
+        }
+
+        [$maxNumerator, $maxDenominator] = array_replace(
+            [1, 1], array_filter(sscanf($parameters['max_ratio'], '%f/%d'))
+        );
+
+        return ($width / $height) < ($maxNumerator / $maxDenominator);
     }
 
     /**
@@ -826,7 +908,7 @@ trait ValidatesAttributes
             return false;
         }
 
-        $validations = collect($parameters)
+        $validations = (new Collection($parameters))
             ->unique()
             ->map(fn ($validation) => match (true) {
                 $validation === 'strict' => new NoRFCWarningsValidation(),
@@ -840,7 +922,9 @@ trait ValidatesAttributes
             ->values()
             ->all() ?: [new RFCValidation];
 
-        return (new EmailValidator)->isValid($value, new MultipleValidationWithAnd($validations));
+        $emailValidator = Container::getInstance()->make(EmailValidator::class);
+
+        return $emailValidator->isValid($value, new MultipleValidationWithAnd($validations));
     }
 
     /**
@@ -863,6 +947,10 @@ trait ValidatesAttributes
         $column = $this->getQueryColumn($parameters, $attribute);
 
         $expected = is_array($value) ? count(array_unique($value)) : 1;
+
+        if ($expected === 0) {
+            return true;
+        }
 
         return $this->getExistCount(
             $connection, $table, $column, $value, $parameters
@@ -1070,6 +1158,27 @@ trait ValidatesAttributes
     }
 
     /**
+     * Validate the extension of a file upload attribute is in a set of defined extensions.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array<int, int|string>  $parameters
+     * @return bool
+     */
+    public function validateExtensions($attribute, $value, $parameters)
+    {
+        if (! $this->isValidFileInstance($value)) {
+            return false;
+        }
+
+        if ($this->shouldBlockPhpUpload($value, $parameters)) {
+            return false;
+        }
+
+        return in_array(strtolower($value->getClientOriginalExtension()), $parameters);
+    }
+
+    /**
      * Validate the given value is a valid file.
      *
      * @param  string  $attribute
@@ -1264,15 +1373,34 @@ trait ValidatesAttributes
     }
 
     /**
-     * Validate the MIME type of a file is an image MIME type.
+     * Validate that an attribute is a valid HEX color.
      *
      * @param  string  $attribute
      * @param  mixed  $value
      * @return bool
      */
-    public function validateImage($attribute, $value)
+    public function validateHexColor($attribute, $value)
     {
-        return $this->validateMimes($attribute, $value, ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp']);
+        return preg_match('/^#(?:(?:[0-9a-f]{3}){1,2}|(?:[0-9a-f]{4}){1,2})$/i', $value) === 1;
+    }
+
+    /**
+     * Validate the MIME type of a file is an image MIME type.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array<int, string>  $parameters
+     * @return bool
+     */
+    public function validateImage($attribute, $value, $parameters = [])
+    {
+        $mimes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+
+        if (is_array($parameters) && in_array('allow_svg', $parameters)) {
+            $mimes[] = 'svg';
+        }
+
+        return $this->validateMimes($attribute, $value, $mimes);
     }
 
     /**
@@ -1390,12 +1518,16 @@ trait ValidatesAttributes
      */
     public function validateJson($attribute, $value)
     {
-        if (is_array($value)) {
+        if (is_array($value) || is_null($value)) {
             return false;
         }
 
-        if (! is_scalar($value) && ! is_null($value) && ! method_exists($value, '__toString')) {
+        if (! is_scalar($value) && ! method_exists($value, '__toString')) {
             return false;
+        }
+
+        if (function_exists('json_validate')) {
+            return json_validate($value);
         }
 
         json_decode($value);
@@ -1404,7 +1536,7 @@ trait ValidatesAttributes
     }
 
     /**
-     * Validate the size of an attribute is less than a maximum value.
+     * Validate the size of an attribute is less than or equal to a maximum value.
      *
      * @param  string  $attribute
      * @param  mixed  $value
@@ -1510,7 +1642,7 @@ trait ValidatesAttributes
     }
 
     /**
-     * Validate the size of an attribute is greater than a minimum value.
+     * Validate the size of an attribute is greater than or equal to a minimum value.
      *
      * @param  string  $attribute
      * @param  mixed  $value
@@ -1722,6 +1854,86 @@ trait ValidatesAttributes
     }
 
     /**
+     * Validate that an attribute is present when another attribute has a given value.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array<int, int|string>  $parameters
+     * @return bool
+     */
+    public function validatePresentIf($attribute, $value, $parameters)
+    {
+        $this->requireParameterCount(2, $parameters, 'present_if');
+
+        [$values, $other] = $this->parseDependentRuleParameters($parameters);
+
+        if (in_array($other, $values, is_bool($other) || is_null($other))) {
+            return $this->validatePresent($attribute, $value);
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate that an attribute is present unless another attribute has a given value.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array<int, int|string>  $parameters
+     * @return bool
+     */
+    public function validatePresentUnless($attribute, $value, $parameters)
+    {
+        $this->requireParameterCount(2, $parameters, 'present_unless');
+
+        [$values, $other] = $this->parseDependentRuleParameters($parameters);
+
+        if (! in_array($other, $values, is_bool($other) || is_null($other))) {
+            return $this->validatePresent($attribute, $value);
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate that an attribute is present when any given attribute is present.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array<int, int|string>  $parameters
+     * @return bool
+     */
+    public function validatePresentWith($attribute, $value, $parameters)
+    {
+        $this->requireParameterCount(1, $parameters, 'present_with');
+
+        if (Arr::hasAny($this->data, $parameters)) {
+            return $this->validatePresent($attribute, $value);
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate that an attribute is present when all given attributes are present.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array<int, int|string>  $parameters
+     * @return bool
+     */
+    public function validatePresentWithAll($attribute, $value, $parameters)
+    {
+        $this->requireParameterCount(1, $parameters, 'present_with_all');
+
+        if (Arr::has($this->data, $parameters)) {
+            return $this->validatePresent($attribute, $value);
+        }
+
+        return true;
+    }
+
+    /**
      * Validate that an attribute passes a regular expression check.
      *
      * @param  string  $attribute
@@ -1826,6 +2038,25 @@ trait ValidatesAttributes
     }
 
     /**
+     * Validate that an attribute exists when another attribute was "declined".
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  mixed  $parameters
+     * @return bool
+     */
+    public function validateRequiredIfDeclined($attribute, $value, $parameters)
+    {
+        $this->requireParameterCount(1, $parameters, 'required_if_declined');
+
+        if ($this->validateDeclined($parameters[0], $this->getValue($parameters[0]))) {
+            return $this->validateRequired($attribute, $value);
+        }
+
+        return true;
+    }
+
+    /**
      * Validate that an attribute does not exist or is an empty string.
      *
      * @param  string  $attribute
@@ -1853,6 +2084,44 @@ trait ValidatesAttributes
 
         if (in_array($other, $values, is_bool($other) || is_null($other))) {
             return ! $this->validateRequired($attribute, $value);
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate that an attribute does not exist when another attribute was "accepted".
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  mixed  $parameters
+     * @return bool
+     */
+    public function validateProhibitedIfAccepted($attribute, $value, $parameters)
+    {
+        $this->requireParameterCount(1, $parameters, 'prohibited_if_accepted');
+
+        if ($this->validateAccepted($parameters[0], $this->getValue($parameters[0]))) {
+            return $this->validateProhibited($attribute, $value);
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate that an attribute does not exist when another attribute was "declined".
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  mixed  $parameters
+     * @return bool
+     */
+    public function validateProhibitedIfDeclined($attribute, $value, $parameters)
+    {
+        $this->requireParameterCount(1, $parameters, 'prohibited_if_declined');
+
+        if ($this->validateDeclined($parameters[0], $this->getValue($parameters[0]))) {
+            return $this->validateProhibited($attribute, $value);
         }
 
         return true;
@@ -2038,7 +2307,7 @@ trait ValidatesAttributes
      */
     protected function shouldConvertToBoolean($parameter)
     {
-        return in_array('boolean', Arr::get($this->rules, $parameter, []));
+        return in_array('boolean', $this->rules[$parameter] ?? []);
     }
 
     /**
@@ -2329,11 +2598,22 @@ trait ValidatesAttributes
      *
      * @param  string  $attribute
      * @param  mixed  $value
+     * @param  array<int, int<0, 8>|'max'>  $parameters
      * @return bool
      */
-    public function validateUuid($attribute, $value)
+    public function validateUuid($attribute, $value, $parameters)
     {
-        return Str::isUuid($value);
+        $version = null;
+
+        if ($parameters !== null && count($parameters) === 1) {
+            $version = $parameters[0];
+
+            if ($version !== 'max') {
+                $version = (int) $parameters[0];
+            }
+        }
+
+        return Str::isUuid($value, $version);
     }
 
     /**

@@ -12,17 +12,15 @@ class CanConfigureMigrationCommandsTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->traitObject = $this->getMockForAbstractClass(CanConfigureMigrationCommandsTestMockClass::class);
+        $this->traitObject = new CanConfigureMigrationCommandsTestMockClass();
     }
 
     private function __reflectAndSetupAccessibleForProtectedTraitMethod($methodName)
     {
-        $migrateFreshUsingReflection = new ReflectionMethod(
+        return new ReflectionMethod(
             get_class($this->traitObject),
             $methodName
         );
-
-        return $migrateFreshUsingReflection;
     }
 
     public function testMigrateFreshUsingDefault(): void

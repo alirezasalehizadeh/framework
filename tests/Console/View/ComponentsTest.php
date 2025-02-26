@@ -43,6 +43,15 @@ class ComponentsTest extends TestCase
         $this->assertStringContainsString('⇂ php artisan inspire', $output);
     }
 
+    public function testSuccess()
+    {
+        $output = new BufferedOutput();
+
+        with(new Components\Success($output))->render('The application is in the [production] environment');
+
+        $this->assertStringContainsString('SUCCESS  The application is in the [production] environment.', $output->fetch());
+    }
+
     public function testError()
     {
         $output = new BufferedOutput();
@@ -66,17 +75,17 @@ class ComponentsTest extends TestCase
         $output = m::mock(OutputStyle::class);
 
         $output->shouldReceive('confirm')
-               ->with('Question?', false)
-               ->once()
-               ->andReturnTrue();
+            ->with('Question?', false)
+            ->once()
+            ->andReturnTrue();
 
         $result = with(new Components\Confirm($output))->render('Question?');
         $this->assertTrue($result);
 
         $output->shouldReceive('confirm')
-               ->with('Question?', true)
-               ->once()
-               ->andReturnTrue();
+            ->with('Question?', true)
+            ->once()
+            ->andReturnTrue();
 
         $result = with(new Components\Confirm($output))->render('Question?', true);
         $this->assertTrue($result);
@@ -87,9 +96,9 @@ class ComponentsTest extends TestCase
         $output = m::mock(OutputStyle::class);
 
         $output->shouldReceive('askQuestion')
-               ->with(m::type(ChoiceQuestion::class))
-               ->once()
-               ->andReturn('a');
+            ->with(m::type(ChoiceQuestion::class))
+            ->once()
+            ->andReturn('a');
 
         $result = with(new Components\Choice($output))->render('Question?', ['a', 'b']);
         $this->assertSame('a', $result);

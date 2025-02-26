@@ -6,6 +6,7 @@ use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\Rule;
 use Illuminate\Contracts\Validation\ValidatorAwareRule;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Support\Traits\Conditionable;
@@ -14,8 +15,7 @@ use InvalidArgumentException;
 
 class File implements Rule, DataAwareRule, ValidatorAwareRule
 {
-    use Conditionable;
-    use Macroable;
+    use Conditionable, Macroable;
 
     /**
      * The MIME types that the given file should match. This array may also contain file extensions.
@@ -23,6 +23,13 @@ class File implements Rule, DataAwareRule, ValidatorAwareRule
      * @var array
      */
     protected $allowedMimetypes = [];
+
+    /**
+     * The extensions that the given file should match.
+     *
+     * @var array
+     */
+    protected $allowedExtensions = [];
 
     /**
      * The minimum size in kilobytes that the file can be.
@@ -79,7 +86,7 @@ class File implements Rule, DataAwareRule, ValidatorAwareRule
      * If no arguments are passed, the default file rule configuration will be returned.
      *
      * @param  static|callable|null  $callback
-     * @return static|null
+     * @return static|void
      */
     public static function defaults($callback = null)
     {
@@ -111,11 +118,12 @@ class File implements Rule, DataAwareRule, ValidatorAwareRule
     /**
      * Limit the uploaded file to only image types.
      *
+     * @param  bool  $allowSvg
      * @return ImageFile
      */
-    public static function image()
+    public static function image($allowSvg = false)
     {
-        return new ImageFile();
+        return new ImageFile($allowSvg);
     }
 
     /**
@@ -127,6 +135,19 @@ class File implements Rule, DataAwareRule, ValidatorAwareRule
     public static function types($mimetypes)
     {
         return tap(new static(), fn ($file) => $file->allowedMimetypes = (array) $mimetypes);
+    }
+
+    /**
+     * Limit the uploaded file to the given file extensions.
+     *
+     * @param  string|array<int, string>  $extensions
+     * @return $this
+     */
+    public function extensions($extensions)
+    {
+        $this->allowedExtensions = (array) $extensions;
+
+        return $this;
     }
 
     /**
@@ -200,9 +221,9 @@ class File implements Rule, DataAwareRule, ValidatorAwareRule
 
         return round(match (true) {
             Str::endsWith($size, 'kb') => $value * 1,
-            Str::endsWith($size, 'mb') => $value * 1000,
-            Str::endsWith($size, 'gb') => $value * 1000000,
-            Str::endsWith($size, 'tb') => $value * 1000000000,
+            Str::endsWith($size, 'mb') => $value * 1_000,
+            Str::endsWith($size, 'gb') => $value * 1_000_000,
+            Str::endsWith($size, 'tb') => $value * 1_000_000_000,
             default => throw new InvalidArgumentException('Invalid file size suffix.'),
         });
     }
@@ -256,6 +277,10 @@ class File implements Rule, DataAwareRule, ValidatorAwareRule
 
         $rules = array_merge($rules, $this->buildMimetypes());
 
+        if (! empty($this->allowedExtensions)) {
+            $rules[] = 'extensions:'.implode(',', array_map(strtolower(...), $this->allowedExtensions));
+        }
+
         $rules[] = match (true) {
             is_null($this->minimumFileSize) && is_null($this->maximumFileSize) => null,
             is_null($this->maximumFileSize) => "min:{$this->minimumFileSize}",
@@ -306,9 +331,9 @@ class File implements Rule, DataAwareRule, ValidatorAwareRule
      */
     protected function fail($messages)
     {
-        $messages = collect(Arr::wrap($messages))->map(function ($message) {
-            return $this->validator->getTranslator()->get($message);
-        })->all();
+        $messages = Collection::wrap($messages)
+            ->map(fn ($message) => $this->validator->getTranslator()->get($message))
+            ->all();
 
         $this->messages = array_merge($this->messages, $messages);
 
